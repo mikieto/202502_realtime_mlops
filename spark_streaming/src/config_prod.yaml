@@ -1,0 +1,6 @@
+# config_prod.yaml
+
+kafka_broker: "prod.kafka.example.com:9092"
+kafka_topic: "prod_topic"
+delta_lake_path: "/mnt/delta/prod"
+checkpoint_dir: "/mnt/delta/checkpoints/prod"

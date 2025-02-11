@@ -1,0 +1,12 @@
+groups:
+  - name: kafka_alerts
+    rules:
+      - alert: LowKafkaMessages
+        expr: kafka_server_broker_topic_metrics_messages_in_per_sec < 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low Kafka Messages Per Second"
+          description: "Kafka messages in per second is below 1000 for more than 5 minutes."
+
