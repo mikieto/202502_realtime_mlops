@@ -9,6 +9,8 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
+    networks:
+      - spark-network
 
   # ------------------------------------------------------------
   # Kafka
@@ -24,6 +26,8 @@ services:
       - "9092:9092"
     depends_on:
       - zookeeper
+    networks:
+      - spark-network
 
   # ------------------------------------------------------------
   # Spark Master
@@ -36,6 +40,8 @@ services:
     ports:
       - "7077:7077"   # Spark master port
       - "8080:8080"   # Spark master UI
+    networks:
+      - spark-network
 
   # ------------------------------------------------------------
   # Spark Worker
@@ -47,6 +53,8 @@ services:
       - SPARK_MASTER_URL=spark://spark-master:7077
     depends_on:
       - spark-master
+    networks:
+      - spark-network
 
   # ------------------------------------------------------------
   # MinIO (S3-compatible storage for Delta Lake)
@@ -62,6 +70,8 @@ services:
       - "9001:9001"
     volumes:
       - ./minio_data:/data
+    networks:
+      - spark-network
 
   # ------------------------------------------------------------
   # kafka_producer (Sends GTFS-RT data to Kafka)
@@ -75,6 +85,8 @@ services:
       - KAFKA_TOPIC=dev_topic
     depends_on:
       - kafka
+    networks:
+      - spark-network
 
   # ------------------------------------------------------------
   # spark_streaming (Consumes from Kafka, writes to Delta)
@@ -96,3 +108,42 @@ services:
       - spark-master
       - spark-worker
       - minio
+    networks:
+      - spark-network
+  
+  # ------------------------------------------------------------
+  # dbt
+  # ------------------------------------------------------------
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-spark:1.9.latest
+    volumes:
+      - ./dbt:/dbt
+    working_dir: /dbt
+    command: ["run", "--profiles-dir=/dbt"]
+    depends_on:
+      - spark-thrift
+    networks:
+      - spark-network
+
+  # ------------------------------------------------------------
+  # Spark Thrift Server (build from Dockerfile)
+  # ------------------------------------------------------------
+  spark-thrift:
+    build:
+      context: ./spark_thrift  # Dockerfile path
+    environment:
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=admin123
+    depends_on:
+      - spark-master
+      - minio
+    ports:
+      - "10000:10000"  # Thrift Server default port
+    networks:
+      - spark-network
+
+networks:
+  spark-network:
+    driver: bridge

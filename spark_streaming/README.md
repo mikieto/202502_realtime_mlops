@@ -1,25 +1,23 @@
----
-
 # Spark Streaming
 
-This directory contains the code for our real-time data processing job. The job reads data from a Kafka topic, processes it, and writes the processed data into Delta Lake. Additionally, monitoring and alerting mechanisms are in place to ensure system reliability.
+This directory contains the code for the **real-time data processing** job using **Spark Streaming**. The job reads data from a **Kafka** topic, parses/transforms it, and writes the processed data into **Delta Lake** (stored on **MinIO**). Once data lands in Delta, it can be queried/transformed by **dbt** (through Spark Thrift Server) or used for downstream analytics and ML tasks.
 
 ---
 
 ## Overview
 
-The system consists of three main parts:
+This **Spark Streaming** component typically runs in a **Docker container** alongside:
+- **Kafka** & **ZooKeeper** (for real-time data ingestion)
+- **MinIO** (as an S3-compatible storage for Delta Lake)
+- **Spark Master/Worker** (to provide the cluster runtime for streaming)
+- **Spark Thrift Server** (so dbt can query Spark via JDBC/Thrift)
 
-1. **Data Ingestion (Phase 1):**
-   - A Kafka Producer collects real-time data (e.g., from a GTFS-RT API) and sends it to a Kafka topic (e.g., `dev_topic`).
+Hence, the streaming job:
 
-2. **Data Processing (Phase 2):**
-   - A Spark Streaming job reads data from Kafka, processes it (e.g., parsing JSON), and writes it into Delta Lake.
-   - Delta Lake ensures reliable storage with support for ACID transactions and versioning.
-
-3. **Monitoring and Alerting (Phase 3):**
-   - Metrics such as processing latency and errors are monitored via **Prometheus** and visualized in **Grafana**.
-   - Alert rules trigger **Slack notifications** when anomalies (e.g., processing failures) are detected.
+1. **Subscribes** to a Kafka topic (e.g., `dev_topic`)  
+2. **Processes** incoming JSON or Protobuf-based messages  
+3. **Writes** the result to a **Delta Lake** table at `s3a://my-bucket/delta-lake/...` (MinIO)  
+4. **Exposes** logs that can be monitored alongside other containers (Prometheus/Grafana optional)
 
 ---
 
@@ -27,99 +25,110 @@ The system consists of three main parts:
 
 ```
 spark_streaming/
-├── src/
-│   ├── streaming_main.py         # The main Spark Streaming application.
-│   ├── streaming_config.py       # Reads settings from environment and YAML files.
-│   ├── config_dev.yaml           # Example configuration file for the development environment.
-│   ├── config_prod.yaml          # Example configuration file for production (if needed).
-├── monitoring/
-│   ├── prometheus.yaml           # Prometheus configuration for monitoring Spark Streaming.
-│   ├── alert.rules.yaml          # Alert rules for detecting processing failures.
-│   ├── grafana_dashboards/       # Preconfigured Grafana dashboards.
-├── requirements.txt              # Python package dependencies.
-├── Dockerfile                    # Dockerfile for containerizing the Spark job.
-└── README.md                     # This file.
+├── Dockerfile                  # Docker build for the Spark Streaming container
+├── requirements.txt            # Python dependencies (if using custom PySpark or libraries)
+├── spark_streaming.py          # Main Spark Streaming script
+└── README.md                   # This file
 ```
+
+- **`spark_streaming.py`**: The primary script that reads from Kafka, processes data, and writes to Delta Lake.  
+- **`Dockerfile`**: Containerizes the streaming job, often including Spark + Delta dependencies.  
+- **`requirements.txt`** (optional): If you install custom Python dependencies in the streaming container.
 
 ---
 
 ## Prerequisites
 
-Before running the Spark Streaming job, ensure that:
+1. **Docker Compose**  
+   Ensure Docker Compose is installed. This project uses `docker-compose.yml` in the repository root to orchestrate all services.
 
-### **1. Python and PySpark**
-   - A Python virtual environment is set up and activated.
-   - PySpark (version 3.4.1 recommended) is installed.
-   - Delta Lake (e.g., `delta-spark 2.4.0`) is installed and compatible with your PySpark version.
+2. **Kafka**  
+   A running Kafka service (e.g. via Docker Compose) with a topic named `dev_topic`.  
+   - Check the main `docker-compose.yml` for Kafka definitions.
 
-### **2. Kafka Cluster**
-   - Kafka and ZooKeeper are running (e.g., via Docker Compose).
-   - A Kafka topic named `dev_topic` has been created (if auto-topic creation is disabled, create it manually).
+3. **MinIO (S3-compatible store)**  
+   Provides Delta Lake storage at `s3a://my-bucket/`. Credentials (`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`) are usually passed as environment variables or `spark-submit --conf`.
 
-### **3. Monitoring Stack**
-   - Prometheus, Alertmanager, and Grafana are running (via Docker Compose).
-   - `prometheus.yaml` includes the necessary scrape job for Spark Streaming metrics.
-   - Alert rules in `alert.rules.yaml` are configured to detect failures.
-   - Grafana dashboards are configured for visualization.
+4. **Spark Master/Worker**  
+   The streaming job uses Spark’s cluster mode or client mode via `spark://spark-master:7077` (defined in Docker Compose).
+
+5. **Delta Lake Dependencies**  
+   Typically set via Dockerfile `SPARK_PACKAGES` environment variable (`io.delta:delta-core_2.12:x.x.x`).  
 
 ---
 
-## How to Run
+## Running the Streaming Job
 
-### **1. Start Kafka Producer**
-Run the Kafka Producer to send messages to the `dev_topic`.
+### 1. Build & Start via Docker Compose
 
-### **2. Start the Spark Streaming Job**
-Navigate to `spark_streaming/src` and run:
+From the **project root**, run:
 ```bash
-python streaming_main.py
+docker-compose up -d
 ```
-This starts the Spark job, which:
-   - Reads settings from `.env` and `config_dev.yaml`
-   - Connects to Kafka on `localhost:9092`
-   - Subscribes to `dev_topic`
-   - Processes incoming JSON data
-   - Writes the processed data to Delta Lake
-   - Exposes metrics for Prometheus monitoring
+This brings up:
+- **Kafka + ZooKeeper**
+- **Spark Master/Worker**
+- **MinIO**  
+- **Spark Thrift Server**
+- **spark_streaming** container (running `spark_streaming.py`)
 
-### **3. Monitor Spark Streaming Metrics**
-#### **View Metrics in Prometheus**
-Access Prometheus at:
-```
-http://localhost:9090
-```
-Run the following query to check processing status:
-```promql
-rate(spark_streaming_processed_records_total[5m])
-```
+### 2. Check Logs
 
-#### **View Metrics in Grafana**
-Access Grafana at:
+```bash
+docker-compose logs -f spark_streaming
 ```
-http://localhost:3000
-```
-Dashboards for Spark Streaming metrics should be preloaded.
+You should see log output indicating that the Spark job:
+- Connects to Kafka at `kafka:9092`
+- Subscribes to `dev_topic`
+- Writes Delta files to `s3a://my-bucket/delta-lake/...` in MinIO
 
-### **4. Trigger and Test Alerts**
-Alert rules are configured in `alert.rules.yaml`. To test Slack notifications:
-1. Introduce an error in `streaming_main.py` (e.g., wrong Kafka topic).
-2. Restart the job and monitor Prometheus for alert triggers.
-3. Slack notifications should be sent upon failure.
+### 3. Verify Data in MinIO
+
+1. **MinIO Console**: [http://localhost:9001](http://localhost:9001) (default credentials: `admin / admin123`)
+2. **Check `my-bucket/delta-lake/`**:  
+   You should see `_delta_log/` or partition folders for Delta Lake.
+
+### 4. Configuration & Customization
+
+- **Kafka Broker**: Typically set via env var `KAFKA_BROKER` or inside `spark_streaming.py`.  
+- **Topic**: `KAFKA_TOPIC`, defaulting to `dev_topic`.  
+- **Delta Path**: `DELTA_LAKE_PATH`, e.g. `s3a://my-bucket/delta-lake`.  
+- **MinIO Credentials**: Passed to Spark as `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`. The Dockerfile or Compose sets `spark.hadoop.fs.s3a.*` accordingly.
+
+---
+
+## Monitoring & Alerting
+
+1. **Spark Master UI**  
+   Visit [http://localhost:8080](http://localhost:8080) for Spark Master details (workers, jobs, etc.).  
+   Optionally, the Streaming UI might appear at `[host machine]:4040` if exposed.
+
+2. **Prometheus & Grafana** (Optional)  
+   - If your Compose file includes metrics scraping, you can see streaming metrics in Grafana dashboards.  
+   - [http://localhost:3000](http://localhost:3000) for Grafana, [http://localhost:9090](http://localhost:9090) for Prometheus.
+
+3. **Alerting**  
+   If alert rules are configured (e.g., in Alertmanager), you can get Slack/email notifications on job failures or high latency.
 
 ---
 
 ## Troubleshooting
 
-- **Kafka Connection Errors:** Ensure Kafka is running and `KAFKA_BROKER` in `config_dev.yaml` is correctly set.
-- **Delta Lake Write Issues:** Verify the output directory exists and has proper permissions.
-- **Prometheus Not Scraping Metrics:** Check `prometheus.yaml` to confirm Spark Streaming is included in the scrape jobs.
-- **Slack Alerts Not Triggering:** Confirm Alertmanager is running and the `alert.rules.yaml` contains valid alert conditions.
+- **No Data in MinIO**: Check `docker-compose logs -f spark_streaming`. Possibly missing MinIO credentials or incorrect `s3a://...` path.  
+- **Kafka Connection Issues**: Ensure `kafka` is up, and the topic exists.  
+- **Delta Write Errors**: Confirm the Dockerfile includes the right Delta packages.  
+- **UI Not Accessible**: Verify port mappings in `docker-compose.yml`.
+
+---
+
+## Future Enhancements
+
+- **Windowed Aggregations**: Implement time-based or session-based windows in the streaming job for more complex analytics.  
+- **Schema Enforcement**: Use Delta Lake’s schema evolution or enforcement if the incoming data structure changes.  
+- **Stateful Operations**: Maintain state across records to enable real-time analytics like running counts or intermediate aggregates.
 
 ---
 
 ## Summary
 
-This component of the project enables real-time data processing using Kafka and Spark Streaming. Monitoring and alerting ensure system reliability, making it easier to detect and respond to failures. This sets the foundation for machine learning and further data processing stages.
-
-For any questions or further troubleshooting, refer to the documentation or seek additional support.
-
+This **Spark Streaming** module bridges **Kafka** to **Delta Lake** on **MinIO**, enabling a robust, real-time ingestion pipeline. Data can then be transformed further by **dbt** (via Spark Thrift Server) or used for machine learning. Refer to the main project README for broader architecture details (Kafka Producer, Thrift Server, dbt setup, etc.).

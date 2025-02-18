@@ -1,0 +1,12 @@
+realtime_mlops:
+  target: dev
+  outputs:
+    dev:
+      type: spark
+      method: thrift
+      host: "spark-thrift"
+      port: 10000
+      user: "spark"
+      pass: ""  
+      schema: "default"
+

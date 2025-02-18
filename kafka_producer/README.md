@@ -1,163 +1,167 @@
 # Kafka Producer
 
-This Kafka Producer is a Python-based application that fetches real-time GTFS-RT data (vehicle positions) from an external API, decodes the Protobuf payload, converts it to JSON, and sends the data to a Kafka topic.
+This **Kafka Producer** component is responsible for fetching real-time GTFS-RT (vehicle position) data from an external API, decoding the Protobuf payload, converting it to JSON, and sending the data to a Kafka topic. It fits into the **`202502_realtime_mlops`** project as the primary **data ingestion** source for the subsequent streaming pipeline (Spark Streaming → Delta Lake (MinIO) → Spark Thrift Server → dbt).
 
 ## Overview
 
-**Project:** 202502_realtime_mlops  
-**Component:** Kafka Producer  
-**Data Source:** GTFS-RT Vehicle API  
-**Kafka Topic:** `dev_topic`
+- **Project**: `202502_realtime_mlops`
+- **Component**: `kafka_producer`
+- **Data Source**: GTFS-RT Vehicle API
+- **Kafka Topic**: `dev_topic` (configurable)
 
-This component is part of the overall real-time data ingestion pipeline. It retrieves data from the GTFS-RT API at regular intervals and produces JSON messages into Kafka for downstream processing in Spark Streaming and Delta Lake.
+This producer can be **containerized via Docker Compose** or run locally using Python. It periodically polls the GTFS-RT endpoint, transforms the data into JSON, and produces messages to Kafka for **downstream Spark processing**.
+
+---
 
 ## Features
 
-- **Data Fetching:**  
-  Retrieves GTFS-RT data from the configured API endpoint.
+- **Data Fetching**  
+  Periodically fetches GTFS-RT data from the configured API endpoint (`VEHICLE_URL`).
 
-- **Data Decoding:**  
-  Uses a compiled Protobuf module (`gtfs_realtime_pb2`) to decode the raw data.
+- **Protobuf Decoding**  
+  Uses a Protobuf module (`gtfs_realtime_pb2`) to decode raw GTFS-RT data into a Python object.
 
-- **Data Transformation:**  
-  Converts the Protobuf message into a JSON-compatible dictionary.
+- **JSON Transformation**  
+  Converts the Protobuf message into JSON for consumption by downstream services (e.g., Spark Streaming).
 
-- **Kafka Integration:**  
-  Sends the JSON data to a Kafka topic (`dev_topic`) using the Kafka Producer API.
+- **Kafka Integration**  
+  Sends JSON payloads to the specified **Kafka topic** (`dev_topic`) using the Python `kafka-python` library (or any other configured library).
 
-- **Configurable Polling Interval:**  
-  The script fetches new data periodically (default is every 60 seconds).
+- **Configurable Polling Interval**  
+  Can be set to fetch new data every X seconds (default is typically 60s).
 
-## Prerequisites
+---
 
-- **Docker Environment:**  
-  Ensure that Docker Desktop is installed and configured to run the Kafka, ZooKeeper, and monitoring containers using Docker Compose.  
-  Refer to the project root `README.md` and `docs/deployment.md` for instructions on starting the Kafka environment.
+## Running the Producer (Containerized Approach)
 
-- **Python 3:**  
-  This project requires Python 3.8 or later. It is recommended to use a virtual environment.
+### 1. Docker Compose
 
-- **Dependencies:**  
-  The required Python packages are listed in the `requirements.txt` file.
+In the main `docker-compose.yml` (project root), there is a `kafka_producer` service definition. For example:
 
-## Setup Instructions
-
-### 1. Start the Kafka Environment
-
-Navigate to the project root and start the required services:
-
-```bash
-cd 202502_realtime_mlops
-docker-compose up -d
+```yaml
+services:
+  kafka_producer:
+    build:
+      context: ./kafka_producer
+    environment:
+      - VEHICLE_URL=https://api-public.odpt.org/api/v4/gtfs/realtime/toei_odpt_train_vehicle
+      - KAFKA_BROKER=kafka:9092
+      - KAFKA_TOPIC=dev_topic
+    depends_on:
+      - kafka
+    networks:
+      - spark-network
 ```
 
-Verify that the Kafka broker is running:
+1. From the **project root**, start all services (including Kafka, ZooKeeper, Spark, etc.):
+   ```bash
+   docker-compose up -d
+   ```
+2. Check logs for `kafka_producer`:
+   ```bash
+   docker-compose logs -f kafka_producer
+   ```
+   You should see messages indicating data is being fetched and sent to the Kafka topic.
 
-```bash
-docker-compose ps
-```
+### 2. Verifying Data in Kafka
 
-### 2. Create and Activate the Virtual Environment
-
-Navigate to the Kafka producer directory and set up the environment:
-
-```bash
-cd kafka
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### 3. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Configuration
-
-- **API Endpoint:**  
-  The GTFS-RT API endpoint is defined in the source code as `VEHICLE_URL`. Modify this URL if needed.
-
-- **Kafka Broker:**  
-  The Kafka broker address is set to `localhost:9092`. Ensure this matches your Docker Compose setup.
-
-- **Kafka Topic:**  
-  The topic name (`dev_topic`) is set in the script. Update it if necessary.
-
-## Running the Producer
-
-With the virtual environment activated and dependencies installed, start the producer:
-
-```bash
-python3 kafka_producer.py
-```
-
-You should see console output indicating that data is being fetched and sent to Kafka. For example:
-
-```
-Sent data to Kafka: {"header": {"gtfs_realtime_version": "2.0", ... }
-```
-
-## Verifying Data Ingestion
-
-To verify that data is being sent to Kafka, use the Kafka console consumer:
-
-```bash
-docker exec -it kafka kafka-console-consumer \
-    --bootstrap-server localhost:9092 \
+- **Console Consumer** (within the Kafka container or via Docker Compose):
+  ```bash
+  docker-compose exec kafka kafka-console-consumer \
+    --bootstrap-server kafka:9092 \
     --topic dev_topic \
     --from-beginning
-```
+  ```
+  This should display the JSON messages produced by the Kafka Producer.
 
-This should display the JSON messages produced by the Kafka Producer.
+---
 
-## Monitoring Kafka with JMX Exporter
+## Local Development (Optional)
 
-Kafka exposes metrics via JMX. The project includes a JMX Exporter for Prometheus, allowing visualization and alerting through Grafana.
+If you prefer **not** to run the producer in a Docker container, you can run it **locally**:
 
-1. **Ensure JMX Exporter is configured** in `docker-compose.yaml`:
-   ```yaml
-   environment:
-     KAFKA_OPTS: "-javaagent:/opt/jmx_prometheus_javaagent.jar=9404:/opt/kafka_jmx_exporter.yml"
-   ```
-
-2. **Check JMX metrics**:
+1. **Kafka Broker**  
+   Ensure Kafka is running, typically via Docker Compose:
    ```bash
-   curl -X GET http://localhost:9404/metrics
+   docker-compose up -d
+   ```
+2. **Python Virtual Environment**  
+   ```bash
+   cd kafka_producer
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+3. **Install Dependencies**  
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. **Set Environment Variables**  
+   - `VEHICLE_URL`: GTFS-RT API endpoint.  
+   - `KAFKA_BROKER`: e.g. `localhost:9092` or `kafka:9092` if using Docker.  
+   - `KAFKA_TOPIC`: e.g. `dev_topic`.
+5. **Run the Producer**  
+   ```bash
+   python kafka_producer.py
    ```
 
-3. **View Kafka dashboards in Grafana** (`http://localhost:3000`).
+You should see console output indicating successful sending of JSON data to Kafka.
 
-## Troubleshooting
+---
 
-- **Virtual Environment Issues:**  
-  Ensure that you have activated the virtual environment before running the script (`source venv/bin/activate`).
+## Configuration Details
 
-- **Dependency Errors:**  
-  If you encounter module import errors, check that all packages in `requirements.txt` are installed properly. Re-run `pip install -r requirements.txt` if necessary.
+- **`VEHICLE_URL`**  
+  The default GTFS-RT endpoint can be specified via environment variables (in Docker Compose or local).  
+- **`KAFKA_BROKER`**  
+  Points to your Kafka broker, typically `kafka:9092` if using Docker Compose on the same network.  
+- **`KAFKA_TOPIC`**  
+  Default is `dev_topic`. Change it in code or via env variable as needed.  
+- **Polling Interval**  
+  If needed, edit the `time.sleep(...)` or scheduling logic in `kafka_producer.py`.
 
-- **Kafka Connection Issues:**  
-  Confirm that your Kafka and ZooKeeper containers are running:
-  ```bash
-  docker-compose ps
-  ```
-  Check logs for errors:
-  ```bash
-  docker logs kafka
-  ```
+---
+
+## Monitoring & Troubleshooting
+
+1. **Kafka Broker Logs**  
+   ```bash
+   docker-compose logs -f kafka
+   ```
+   Watch for any broker-side errors (e.g., authentication or network issues).
+
+2. **Producer Container Logs**  
+   ```bash
+   docker-compose logs -f kafka_producer
+   ```
+   Verify that data is fetched at intervals and successfully sent to the topic.
+
+3. **Topic Data**  
+   Use `kafka-console-consumer` as shown above to read messages from the topic. Confirm the JSON structure is valid.
+
+4. **Prometheus & Grafana (Optional)**  
+   - If you have JMX Exporter for Kafka, you can check topic metrics like messages in/out.  
+   - Grafana dashboards can visualize Kafka throughput and producer rates.
+
+---
 
 ## Future Enhancements
 
-- **Security Enhancements:**  
-  Implement TLS, ACLs, or SASL authentication for Kafka.
+- **Security (TLS/SSL, SASL)**  
+  Add TLS or SASL authentication between Producer and Kafka if needed.
 
-- **Automated Topic Creation:**  
-  A script to automate Kafka topic creation.
+- **Automated Topic Creation**  
+  A script or config that ensures the topic (`dev_topic`) is created with desired replication/partition settings.
 
-- **Enhanced Logging & Monitoring:**  
-  Centralized logging for debugging and performance tracking.
+- **Rate Limiting & Backpressure**  
+  If the API or Kafka cluster needs to handle high volume, implement more sophisticated handling logic in the producer.
+
+---
 
 ## License
 
-This component is released under the MIT License. See the LICENSE file in the project root for details.
+This Kafka Producer is released under the **MIT License**. See the [LICENSE](../LICENSE) file in the project root for more details.
 
+---
+
+**Questions or Issues?**  
+Feel free to open an issue or pull request in the main repository. The `kafka_producer` component is one part of the **real-time ingestion pipeline** that also involves Spark Streaming, MinIO (Delta Lake), Spark Thrift Server, and dbt.

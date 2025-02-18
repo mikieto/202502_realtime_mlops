@@ -1,0 +1,14 @@
+# dbt_project.yml
+name: "realtime_mlops"
+version: "1.0"
+config-version: 2
+
+# This should match the name of the block in profiles.yml
+profile: "realtime_mlops"
+
+# Paths where dbt will look for SQL model files
+model-paths: ["models"]
+analysis-paths: ["analysis"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_modules"]
