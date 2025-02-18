@@ -1,0 +1,98 @@
+services:
+  # ------------------------------------------------------------
+  # Zookeeper
+  # ------------------------------------------------------------
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  # ------------------------------------------------------------
+  # Kafka
+  # ------------------------------------------------------------
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+
+  # ------------------------------------------------------------
+  # Spark Master
+  # ------------------------------------------------------------
+  spark-master:
+    image: bitnami/spark:3.3.2
+    environment:
+      - SPARK_MODE=master
+      - SPARK_MASTER_HOST=spark-master
+    ports:
+      - "7077:7077"   # Spark master port
+      - "8080:8080"   # Spark master UI
+
+  # ------------------------------------------------------------
+  # Spark Worker
+  # ------------------------------------------------------------
+  spark-worker:
+    image: bitnami/spark:3.3.2
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    depends_on:
+      - spark-master
+
+  # ------------------------------------------------------------
+  # MinIO (S3-compatible storage for Delta Lake)
+  # ------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=admin123
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ./minio_data:/data
+
+  # ------------------------------------------------------------
+  # kafka_producer (Sends GTFS-RT data to Kafka)
+  # ------------------------------------------------------------
+  kafka_producer:
+    build:
+      context: ./kafka_producer
+    environment:
+      - VEHICLE_URL=https://api-public.odpt.org/api/v4/gtfs/realtime/toei_odpt_train_vehicle
+      - KAFKA_BROKER=kafka:9092
+      - KAFKA_TOPIC=dev_topic
+    depends_on:
+      - kafka
+
+  # ------------------------------------------------------------
+  # spark_streaming (Consumes from Kafka, writes to Delta)
+  # ------------------------------------------------------------
+  spark_streaming:
+    build:
+      context: ./spark_streaming
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - KAFKA_TOPIC=dev_topic
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=admin123
+      # Delta Lake path & checkpoint path (inside MinIO)
+      - DELTA_LAKE_PATH=s3a://my-bucket/delta-lake
+      - CHECKPOINT_DIR=s3a://my-bucket/delta-lake-checkpoint
+    depends_on:
+      - kafka
+      - spark-master
+      - spark-worker
+      - minio

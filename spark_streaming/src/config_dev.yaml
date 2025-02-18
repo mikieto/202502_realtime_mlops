@@ -1,6 +1,0 @@
-# config_dev.yaml
-kafka_broker: "localhost:9092"
-kafka_topic: "dev_topic"
-delta_lake_path: "/home/mikieto/projects/202502_realtime_mlops/delta/dev"
-checkpoint_dir: "/home/mikieto/projects/202502_realtime_mlops/delta_checkpoints/dev"
-
