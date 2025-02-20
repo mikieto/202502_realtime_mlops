@@ -1,11 +1,24 @@
-FROM bitnami/spark:3.3.2
+FROM bitnami/spark:3.5.3
 
-ENV SPARK_PACKAGES="org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.2,io.delta:delta-core_2.12:2.3.0,io.delta:delta-storage:2.3.0"
+ENV DELTA_VERSION="3.3.0"
 
-# Run the streaming job by default
-CMD spark-submit --packages "$SPARK_PACKAGES" \
-  --class "org.apache.spark.sql.hive.thriftserver.HiveThriftServer2" \
-  --conf "spark.hadoop.fs.s3a.endpoint=${MINIO_ENDPOINT}" \
-  --conf "spark.hadoop.fs.s3a.access.key=${MINIO_ROOT_USER}" \
-  --conf "spark.hadoop.fs.s3a.secret.key=${MINIO_ROOT_PASSWORD}" \
-  "/opt/bitnami/spark/jars/spark-thrift-server-3.3.2.jar"
+USER root
+RUN apt-get update && apt-get install -y maven && rm -rf /var/lib/apt/lists/*
+RUN useradd -m -d /home/spark -u 1001 -U spark
+RUN mkdir -p /home/spark/.ivy2 && chown -R spark:spark /home/spark
+RUN mkdir -p /app && chown -R spark:spark /app
+
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+USER spark
+ENV HOME=/home/spark
+WORKDIR /app
+
+COPY pom.xml /app/pom.xml
+RUN mvn dependency:copy-dependencies -DoutputDirectory=/app/jars
+RUN ls -l /app/jars
+
+ENTRYPOINT ["/app/entrypoint.sh"]
+
+

@@ -119,7 +119,7 @@ services:
     volumes:
       - ./dbt:/dbt
     working_dir: /dbt
-    command: ["run", "--profiles-dir=/dbt"]
+    command: ["run", "--profiles-dir=/dbt", "--target=dev"]
     depends_on:
       - spark-thrift
     networks:
@@ -133,9 +133,10 @@ services:
       context: ./spark_thrift  # Dockerfile path
     environment:
       - SPARK_MASTER_URL=spark://spark-master:7077
-      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ROOT_USER=admin
       - MINIO_ROOT_PASSWORD=admin123
+      - MINIO_PATH_STYLE_ACCESS=true
     depends_on:
       - spark-master
       - minio

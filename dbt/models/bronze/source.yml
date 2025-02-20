@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: bronze_data                 # source name in dbt
+    schema: default                   # schema name in Hive
+    tables:
+      - name: raw_vehicle_positions   # reference name in dbt
+        identifier: vehicle_positions # physical table name in Hive
+

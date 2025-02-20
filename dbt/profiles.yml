@@ -1,5 +1,5 @@
 realtime_mlops:
-  target: dev
+  target: local
   outputs:
     dev:
       type: spark
@@ -7,6 +7,14 @@ realtime_mlops:
       host: "spark-thrift"
       port: 10000
       user: "spark"
-      pass: ""  
+      pass: ""
+      schema: "default"
+    local:
+      type: spark
+      method: thrift
+      host: "localhost"
+      port: 10000
+      user: "spark"
+      pass: ""
       schema: "default"
 

@@ -1,0 +1,13 @@
+{
+    "sqltools.connections": [
+        {
+            "hiveCLIServiceProtocolVersion": "V11",
+            "previewLimit": 50,
+            "driver": "Hive",
+            "name": "spark-thrift",
+            "host": "localhost",
+            "port": 10000,
+            "username": "hive"
+        }
+    ]
+}
