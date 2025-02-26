@@ -181,3 +181,4 @@ gtfs_temp/
 .vscode/
 metastore_db/
 mlrun/
+bin/

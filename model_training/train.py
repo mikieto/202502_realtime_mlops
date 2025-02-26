@@ -87,10 +87,10 @@ def feature_engineering(df: pd.DataFrame) -> pd.DataFrame:
     """Add features like day_of_week and hour_of_day and convert datetime rows"""
     print("===== Feature Engineering =====")
     # Convert to datetime
-    df["arrival_time"] = pd.to_datetime(df["arrival_time"])
-    df["departure_time"] = pd.to_datetime(df["departure_time"])
-    df["next_arrival_time"] = pd.to_datetime(df["next_arrival_time"])
-    df["producer_timestamp_ts"] = pd.to_datetime(df["producer_timestamp_ts"])
+    df["producer_timestamp"] = pd.to_datetime(df["producer_timestamp"])
+
+    df["depature_delay_time_second"] = df["departure_delay_time_second"].astype(float)
+    df["scheduled_travel_time_second"] = df["scheduled_travel_time_second"].astype(float)
 
     df["travel_time_second"] = df["travel_time_second"].astype(float)
     df["current_stop_sequence"] = df["current_stop_sequence"].astype(int)
@@ -108,7 +108,8 @@ def make_train_test(df: pd.DataFrame):
     le = LabelEncoder()
     df["trip_id_encoded"] = le.fit_transform(df["trip_id"])
 
-    feature_cols = ["trip_id_encoded", "current_stop_sequence", "day_of_week", "hour_of_day"]
+    feature_cols = ["trip_id_encoded", "current_stop_sequence", "day_of_week", "hour_of_day",
+                "scheduled_travel_time_second", "departure_delay_time_second"]
     X = df[feature_cols].copy()
     y = df["travel_time_second"].copy()
 

@@ -19,7 +19,7 @@ WITH raw AS (
             )
           )
           AS timestamp
-        ) AS scheduled_arrival_time_ts,
+        ) AS scheduled_arrival_time,
 
         -- Convert departure_time to actual timestamp
         CAST(
@@ -32,7 +32,7 @@ WITH raw AS (
             )
           )
           AS timestamp
-        ) AS scheduled_departure_time_ts,
+        ) AS scheduled_departure_time,
 
         stop_id
     FROM {{ ref('dbt_bronze_stop_times') }}
@@ -41,7 +41,7 @@ WITH raw AS (
 SELECT
     trip_id,
     stop_sequence,
-    scheduled_arrival_time_ts,
-    scheduled_departure_time_ts,
+    scheduled_arrival_time,
+    scheduled_departure_time,
     stop_id
 FROM raw;
