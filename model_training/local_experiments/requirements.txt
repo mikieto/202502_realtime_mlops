@@ -1,0 +1,11 @@
+pyhive[thrift]==0.6.1
+pandas==1.5.3
+numpy==1.23.5
+scikit-learn==1.2.1
+xgboost==1.7.3
+jupyter==1.0.0
+thrift==0.13.0
+sasl==0.3.1
+thrift-sasl==0.4.3
+ydata-profiling==4.2.0
+py4j==0.10.9

@@ -177,3 +177,7 @@ data_extraction_output
 minio_data/
 Old/
 bin/
+gtfs_temp/
+.vscode/
+metastore_db/
+mlrun/

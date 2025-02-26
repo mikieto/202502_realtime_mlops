@@ -76,7 +76,7 @@ services:
   # ------------------------------------------------------------
   # kafka_producer (Sends GTFS-RT data to Kafka)
   # ------------------------------------------------------------
-  kafka_producer:
+  kafka-producer:
     build:
       context: ./kafka_producer
     environment:
@@ -91,7 +91,7 @@ services:
   # ------------------------------------------------------------
   # spark_streaming (Consumes from Kafka, writes to Delta)
   # ------------------------------------------------------------
-  spark_streaming:
+  spark-streaming:
     build:
       context: ./spark_streaming
     environment:
@@ -106,7 +106,6 @@ services:
     depends_on:
       - kafka
       - spark-master
-      - spark-worker
       - minio
     networks:
       - spark-network
@@ -121,7 +120,7 @@ services:
     working_dir: /dbt
     command: ["run", "--profiles-dir=/dbt", "--target=dev"]
     depends_on:
-      - spark-thrift
+      - init-tables
     networks:
       - spark-network
 
@@ -142,6 +141,127 @@ services:
       - minio
     ports:
       - "10000:10000"  # Thrift Server default port
+    networks:
+      - spark-network
+
+  # ------------------------------------------------------------
+  # Initialize Delta Lake tables
+  # ------------------------------------------------------------
+  init-tables:
+    build:
+      context: ./init_tables
+    depends_on:
+      - spark-thrift
+    networks:
+      - spark-network
+
+  # ------------------------------------------------------------
+  # Jupyter Notebook
+  # ------------------------------------------------------------
+  jupyter:
+    build:
+      context: ./model_training/local_experiments
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./model_training/local_experiments:/app/local_experiments
+    depends_on:
+      - minio
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=admin123
+    networks:
+      - spark-network
+
+  # ------------------------------------------------------------
+  # MLflow
+  # ------------------------------------------------------------
+  mlflow:
+    build:
+      context: ./mlflow
+    ports:
+      - "5000:5000"    # for MLflow UI
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MINIO_ENDPOINT_URL: http://minio:9000
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: admin123
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:///mlflow.db
+      --default-artifact-root s3://my-bucket/mlflow_artifacts
+      --host 0.0.0.0
+      --port 5000
+    depends_on:
+      - minio
+    networks:
+      - spark-network
+
+  # ------------------------------------------------------------
+  # Trainer (build from Dockerfile)
+  # ------------------------------------------------------------
+  trainer:
+    build:
+      context: ./model_training
+    depends_on:
+      - mlflow
+      - spark-thrift
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - MODEL_NAME=MyXGBModel
+      - SPARK_THRIFT_SERVER=spark-thrift:10000
+      - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=admin123
+    networks:
+      - spark-network
+
+  # ------------------------------------------------------------
+  # FastAPI Inference (build from Dockerfile)
+  # ------------------------------------------------------------
+  fastapi-inference:
+    build:
+      context: ./fastapi_inference
+    depends_on:
+      - mlflow
+    environment:
+      - MODEL_URI=models:/MyXGBModel/Production
+      # MLflow tracking, S3 endpoint, etc. if needed
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      # If loading model from MLflow S3 artifact store
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=admin123
+      - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+    ports:
+      - "8000:8000"
+    networks:
+      - spark-network
+
+  # ------------------------------------------------------------
+  # Prometheus & Grafana
+  # ------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - kafka
+      - spark-master
+    networks:
+      - spark-network
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./monitoring/grafana:/etc/grafana/provisioning
     networks:
       - spark-network
 
